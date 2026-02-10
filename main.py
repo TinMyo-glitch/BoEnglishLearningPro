@@ -7,7 +7,7 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
 def main():
     # Render ပေါ်တင်ရင် Token ကို Environment Variable ကနေ ဖတ်တာ ပိုကောင်းပါတယ်
-    token = os.getenv("BOT_TOKEN", "YOUR_TOKEN_HERE")
+    token = os.getenv("BOT_TOKEN", "8461107529:AAEhXCsrUSNr4cC6AaiERvKYL21eTV6P_Ns")
     app = Application.builder().token(token).build()
     app.add_handler(CommandHandler("start", start))
     print("Bot is starting...")
