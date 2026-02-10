@@ -1,18 +1,22 @@
 import os
+import openai
 from flask import Flask
 from threading import Thread
 from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup, Poll
-from telegram.ext import Application, CommandHandler, CallbackQueryHandler, ContextTypes
+# MessageHandler နှင့် filters ကို import ထဲတွင် ထည့်ထားသည်
+from telegram.ext import Application, CommandHandler, CallbackQueryHandler, MessageHandler, filters, ContextTypes
 
 # --- ၁။ Render Port Setup ---
 app = Flask('')
 @app.route('/')
-def home(): return "Bot is alive!"
+def home(): 
+    return "Bot is alive!"
+
 def run():
     port = int(os.environ.get("PORT", 8080))
     app.run(host='0.0.0.0', port=port)
 
-# --- ၂။ သင်ခန်းစာ Content များ (အပြည့်အစုံ) ---
+# --- ၂။ သင်ခန်းစာ Content များ ---
 LESSONS = {
     'level_basic': """
 🟢 **Basic Level (အခြေခံ)**
@@ -52,15 +56,39 @@ Ex: I am a student. (ကျွန်တော် ကျောင်းသား�
 """
 }
 
-# --- ၃။ Quiz မေးခွန်းများ (Question Bank) ---
-# Format: [မေးခွန်း, [အဖြေ ၁, အဖြေ ၂, ...], အဖြေမှန်နံပါတ် (0 ကစရေပါ)]
+# --- ၃။ Quiz မေးခွန်းများ ---
 QUIZZES = {
-    'quiz_basic': ["'I ___ a doctor.' ကွက်လပ်ဖြည့်ပါ။", ["is", "am", "are"], 1], # 1 ဆိုတာ 'am'
-    'quiz_inter': ["'She was ____ TV.' ဘယ်ဟာမှန်သလဲ?", ["watch", "watched", "watching"], 2], # 2 ဆိုတာ 'watching'
-    'quiz_adv': ["'Call it a day' ရဲ့ အဓိပ္ပာယ်က?", ["Stop working", "Start working", "Holiday"], 0] # 0 ဆိုတာ 'Stop working'
+    'quiz_basic': ["'I ___ a doctor.' ကွက်လပ်ဖြည့်ပါ။", ["is", "am", "are"], 1],
+    'quiz_inter': ["'She was ____ TV.' ဘယ်ဟာမှန်သလဲ?", ["watch", "watched", "watching"], 2],
+    'quiz_adv': ["'Call it a day' ရဲ့ အဓိပ္ပာယ်က?", ["Stop working", "Start working", "Holiday"], 0]
 }
 
-# --- ၄။ Bot Functions ---
+# --- ၄။ AI Chat Function ---
+async def chat_with_ai(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    user_message = update.message.text
+    # API Key ကို Render Environment Variables ထဲမှ ယူမည်
+    openai.api_key = os.getenv("OPENAI_API_KEY")
+
+    try:
+        # OpenAI SDK v1.0.0+ format
+        response = openai.chat.completions.create(
+            model="gpt-3.5-turbo",
+            messages=[
+                {
+                    "role": "system", 
+                    "content": "You are a friendly English teacher. Explain English grammar simply in Burmese if the user asks. Correct their mistakes politely."
+                },
+                {"role": "user", "content": user_message}
+            ]
+        )
+        ai_reply = response.choices[0].message.content
+        await update.message.reply_text(ai_reply)
+        
+    except Exception as e:
+        print(f"AI Error: {e}")
+        await update.message.reply_text("ဆရာ AI ခေတ္တ အနားယူနေပါတယ်။ နောက်မှ ပြန်မေးပေးပါနော်။")
+
+# --- ၅။ Bot Functions ---
 
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     keyboard = [
@@ -69,7 +97,7 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
         [InlineKeyboardButton("🔴 Advanced Level", callback_data='level_adv')]
     ]
     await update.message.reply_text(
-        "📚 **English Learning Bot** မှ ကြိုဆိုပါတယ်။\nသင့် Level ကို ရွေးချယ်ပါ -", 
+        "📚 **English Learning Bot** မှ ကြိုဆိုပါတယ်။\nသင့် Level ကို ရွေးချယ်ပါ သို့မဟုတ် သိလိုသည်များကို စာရိုက်၍ မေးမြန်းနိုင်ပါသည် -", 
         reply_markup=InlineKeyboardMarkup(keyboard),
         parse_mode='Markdown'
     )
@@ -80,32 +108,26 @@ async def handle_menu_click(update: Update, context: ContextTypes.DEFAULT_TYPE):
     
     data = query.data
     
-    # သင်ခန်းစာ ပြမယ့်အပိုင်း
     if data.startswith('level_'):
         content = LESSONS.get(data)
-        
-        # Quiz ဖြေမလား ခလုတ်လေး ထပ်ထည့်မယ်
-        quiz_key = data.replace('level', 'quiz') # e.g., level_basic -> quiz_basic
+        quiz_key = data.replace('level', 'quiz')
         keyboard = [
             [InlineKeyboardButton("✍️ Take Quiz (လေ့ကျင့်ခန်းလုပ်မယ်)", callback_data=quiz_key)],
             [InlineKeyboardButton("🔙 Back to Menu", callback_data='back_to_menu')]
         ]
-        
         await query.edit_message_text(text=content, reply_markup=InlineKeyboardMarkup(keyboard), parse_mode='Markdown')
 
-    # Quiz မေးမယ့်အပိုင်း
     elif data.startswith('quiz_'):
         q_data = QUIZZES.get(data)
         question = q_data[0]
         options = q_data[1]
         correct_id = q_data[2]
         
-        # Telegram Native Quiz ပို့မယ်
         await context.bot.send_poll(
             chat_id=update.effective_chat.id,
             question=question,
             options=options,
-            type=Poll.QUIZ, # ဒါက အဖြေမှန်ရင် အမှန်ခြစ်ပြပေးမယ့် Mode
+            type=Poll.QUIZ,
             correct_option_id=correct_id,
             explanation="အဖြေမှန်ကို ရွေးချယ်နိုင်ပါစေ!" 
         )
@@ -113,18 +135,33 @@ async def handle_menu_click(update: Update, context: ContextTypes.DEFAULT_TYPE):
 async def back_to_menu(update: Update, context: ContextTypes.DEFAULT_TYPE):
     query = update.callback_query
     await query.answer()
-    await start(update, context) # Start function ကို ပြန်ခေါ်လိုက်မယ်
+    
+    keyboard = [
+        [InlineKeyboardButton("🟢 Basic Level", callback_data='level_basic')],
+        [InlineKeyboardButton("🟡 Intermediate Level", callback_data='level_inter')],
+        [InlineKeyboardButton("🔴 Advanced Level", callback_data='level_adv')]
+    ]
+    await query.edit_message_text(
+        "📚 သင့် Level ကို ထပ်မံရွေးချယ်ပါ -", 
+        reply_markup=InlineKeyboardMarkup(keyboard)
+    )
 
+# --- ၆။ Main Function ---
 def main():
     Thread(target=run).start()
+    
     token = os.getenv("BOT_TOKEN")
     application = Application.builder().token(token).build()
 
+    # Handlers
     application.add_handler(CommandHandler("start", start))
     application.add_handler(CallbackQueryHandler(back_to_menu, pattern='back_to_menu'))
-    application.add_handler(CallbackQueryHandler(handle_menu_click)) 
+    application.add_handler(CallbackQueryHandler(handle_menu_click))
+    
+    # ဤစာကြောင်းသည် User ပို့သမျှစာကို AI ဆီ ပို့ပေးရန်ဖြစ်သည်
+    application.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, chat_with_ai))
 
-    print("Bot is running with Quizzes...")
+    print("Bot is running with AI and Quizzes...")
     application.run_polling()
 
 if __name__ == '__main__':
