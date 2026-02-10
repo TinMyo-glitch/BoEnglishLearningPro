@@ -1,17 +1,31 @@
 import os
+from flask import Flask
+from threading import Thread
 from telegram import Update
-from telegram.ext import Application, CommandHandler, ContextTypes
+from telegram.ext import Application, CommandHandler
 
-async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    await update.message.reply_text("မင်္ဂလာပါ။ English သင်ခန်းစာများ လေ့လာနိုင်ဖို့ ပြင်ဆင်နေပါပြီ။")
+# Render အတွက် Port ဖွင့်ပေးမယ့် Flask app
+app = Flask('')
+
+@app.route('/')
+def home():
+    return "Bot is running!"
+
+def run():
+    # Render က ပေးတဲ့ Port ကို သုံးမယ်၊ မရှိရင် 8080 သုံးမယ်
+    port = int(os.environ.get("PORT", 8080))
+    app.run(host='0.0.0.0', port=port)
 
 def main():
-    # Render ပေါ်တင်ရင် Token ကို Environment Variable ကနေ ဖတ်တာ ပိုကောင်းပါတယ်
-    token = os.getenv("BOT_TOKEN", "8461107529:AAEhXCsrUSNr4cC6AaiERvKYL21eTV6P_Ns")
-    app = Application.builder().token(token).build()
-    app.add_handler(CommandHandler("start", start))
-    print("Bot is starting...")
-    app.run_polling()
+    # Web server ကို သီးသန့် Thread နဲ့ run မယ်
+    Thread(target=run).start()
+
+    # Bot logic
+    token = os.getenv("BOT_TOKEN")
+    application = Application.builder().token(token).build()
+    application.add_handler(CommandHandler("start", lambda u, c: u.message.reply_text("Bot is online!")))
+    
+    application.run_polling()
 
 if __name__ == '__main__':
     main()
